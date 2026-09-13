@@ -1,3 +1,5 @@
+from datetime import date
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -7,9 +9,22 @@ from pypsa_model import IMPORT_GENERATOR, build_network
 
 st.set_page_config(page_title="PyPSA Epirus GR", layout="wide")
 
-_logo_col1, _logo_col2, _logo_col3 = st.columns([1, 2, 1])
-with _logo_col2:
-    st.image("data/logo.png", use_container_width=True)
+_GREEK_MONTHS = [
+    "Ιανουαρίου", "Φεβρουαρίου", "Μαρτίου", "Απριλίου", "Μαΐου", "Ιουνίου",
+    "Ιουλίου", "Αυγούστου", "Σεπτεμβρίου", "Οκτωβρίου", "Νοεμβρίου", "Δεκεμβρίου",
+]
+_today = date.today()
+_today_str = f"{_today.day} {_GREEK_MONTHS[_today.month - 1]} {_today.year}"
+
+_header_col1, _header_col2 = st.columns([1, 3])
+with _header_col1:
+    st.image("data/logo.png", width=150)
+with _header_col2:
+    st.markdown(
+        f"<div style='text-align: right; padding-top: 0.5rem;'>{_today_str}</div>",
+        unsafe_allow_html=True,
+    )
+st.divider()
 
 st.caption(
     "Phase 4 — πραγματική τοπολογία, γεννήτριες ΚΑΙ ήδη-εγκατεστημένη ισχύς ΑΠΕ (~522MW) από "
