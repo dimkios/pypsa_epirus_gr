@@ -15,6 +15,7 @@ st.caption(
 
 buses = pd.read_csv("data/processed/buses_epirus.csv")
 links = pd.read_csv("data/processed/links_epirus.csv")
+res_existing = pd.read_csv("data/processed/res_existing_epirus.csv")
 
 TYPE_LABELS = {
     "substation": "Υποσταθμός",
@@ -22,6 +23,17 @@ TYPE_LABELS = {
     "kyt": "Κέντρο Υπερύψηλης Τάσης",
 }
 buses["Τύπος"] = buses["type"].map(TYPE_LABELS)
+
+
+def _res_summary(bus_name: str) -> str:
+    rows = res_existing[res_existing["bus"] == bus_name]
+    if rows.empty:
+        return "—"
+    parts = [f"{r['p_nom']:.1f}MW {r['category']}" for _, r in rows.iterrows()]
+    return f"{rows['p_nom'].sum():.1f}MW ΑΠΕ ({', '.join(parts)})"
+
+
+buses["ΑΠΕ"] = buses["name"].map(_res_summary)
 bus_coords = buses.set_index("name")[["lat", "lon"]]
 
 fig = px.scatter_map(
@@ -30,7 +42,7 @@ fig = px.scatter_map(
     lon="lon",
     color="regional_unit",
     hover_name="name",
-    hover_data={"lat": False, "lon": False, "confidence": True, "Τύπος": True},
+    hover_data={"lat": False, "lon": False, "confidence": True, "Τύπος": True, "ΑΠΕ": True},
     zoom=7.4,
     center={"lat": 39.55, "lon": 20.85},
     height=650,
@@ -55,7 +67,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 with st.expander("Πίνακας κόμβων"):
     st.dataframe(
-        buses[["name", "regional_unit", "Τύπος", "lat", "lon", "confidence", "source_note"]],
+        buses[["name", "regional_unit", "Τύπος", "ΑΠΕ", "lat", "lon", "confidence", "source_note"]],
         use_container_width=True,
     )
 
@@ -75,7 +87,7 @@ st.caption(
     "Πειραματίσου με παραμέτρους και δες πώς αλλάζει το ημερήσιο ισοζύγιο."
 )
 
-col_res, col_import, col_demand, col_batt = st.columns(4)
+col_res, col_restype, col_import, col_demand, col_batt = st.columns(5)
 with col_res:
     new_res_mw = st.slider(
         "Νέα ισχύς ΑΠΕ (MW)",
@@ -85,8 +97,18 @@ with col_res:
         step=10,
         help=(
             "ΕΠΙΠΛΕΟΝ ισχύς πάνω από την ήδη υπαρκτή (~522MW, βλ. tab 'Generator'). Κατανέμεται "
-            "αναλογικά με τον πληθυσμό στους 4 κόμβους-φορτία. Ακολουθεί πραγματικό μέσο ηλιακό "
-            "προφίλ από το PVGIS (Ιωάννινα, 2020)."
+            "αναλογικά με τον πληθυσμό στους 4 κόμβους-φορτία."
+        ),
+    )
+with col_restype:
+    new_res_type = st.selectbox(
+        "Τύπος νέας ΑΠΕ",
+        options=["Φωτοβολταϊκά", "Αιολικά"],
+        help=(
+            "Επηρεάζει μόνο την ετικέτα/carrier της γεννήτριας. Η διαθεσιμότητά της (`p_max_pu`) "
+            "ακολουθεί πάντα το ίδιο πραγματικό ηλιακό προφίλ PVGIS (Ιωάννινα, 2020) — δεν έχουμε "
+            "ακόμα πραγματικό προφίλ ανέμου, οπότε αν επιλέξεις 'Αιολικά' θεωρείται απλοποιητικά "
+            "ότι έχει την ίδια διαθεσιμότητα με τα φωτοβολταϊκά."
         ),
     )
 with col_import:
@@ -129,6 +151,7 @@ with col_batt:
 
 network = build_network(
     new_res_mw=new_res_mw,
+    new_res_type=new_res_type,
     import_limit_mw=import_limit_mw,
     demand_change_pct=demand_change_pct,
     battery_mw=battery_mw,
@@ -180,10 +203,13 @@ with tab_gen:
         "επαρκούν) με **πραγματικό p_nom=500MW** — η πραγματική χωρητικότητα της διασύνδεσης "
         "**GRITA Ελλάδας-Ιταλίας** (Galatina-Άραχθος, υποβρύχιο 400kV, από το 2001), που τυχαίνει "
         "να καταλήγει ακριβώς στο ΚΥΤ Άραχθος — αντιπροσωπεύει επίσης γενικά τη σύνδεση με το "
-        "υπόλοιπο ελληνικό σύστημα + **7 γεννήτριες 'ΑΠΕ (υπάρχουσα)'** που αναπαριστούν την ήδη εγκατεστημένη, "
-        "πραγματική ισχύ ΑΠΕ Ηπείρου (~522MW, αιολικά+φωτοβολταϊκά, πηγή: αρχείο ΑΔΜΗΕ Απρ.2026) "
-        "— πάντα ενεργές, όχι εξαρτημένες από το slider. Αν πρόσθεσες κι άλλα παραπάνω στο "
-        "'Σενάριο', εμφανίζεται κι ένα ακόμα σετ γεννητριών 'ΑΠΕ (νέα)'. Όλες οι ΑΠΕ έχουν "
+        "υπόλοιπο ελληνικό σύστημα + **11 γεννήτριες 'ΑΠΕ ... (υπάρχουσα)'** που αναπαριστούν την "
+        "ήδη εγκατεστημένη, πραγματική ισχύ ΑΠΕ Ηπείρου (~522MW, πηγή: αρχείο ΑΔΜΗΕ Απρ.2026), "
+        "**σπασμένη ανά τύπο** — δες τη στήλη `carrier`: `solar_existing` (Φωτοβολταϊκά, "
+        "284MW), `wind_existing` (Αιολικά, 233MW), `small_hydro_existing` (Μικρά "
+        "Υδροηλεκτρικά, 4.8MW) — πάντα ενεργές, όχι εξαρτημένες από το slider. Αν πρόσθεσες κι "
+        "άλλα παραπάνω στο 'Σενάριο', εμφανίζεται κι ένα ακόμα σετ γεννητριών 'ΑΠΕ ... (νέα)' με "
+        "τον τύπο που επέλεξες. Όλες οι ΑΠΕ έχουν "
         "marginal_cost=0 (προτιμώνται πρώτες από τον solver, πριν καν τα υδροηλεκτρικά) και "
         "διαθεσιμότητα (`p_max_pu`) από **πραγματικά δεδομένα ηλιακής ακτινοβολίας PVGIS** "
         "(Ιωάννινα, μέσος όρος έτους 2020) — απλοποίηση: το ίδιο προφίλ εφαρμόζεται και στα "

@@ -29,6 +29,7 @@ BATTERY_BUS = "Άραχθος ΚΥΤ"
 
 def build_network(
     new_res_mw: float = 0,
+    new_res_type: str = "Φωτοβολταϊκά",
     import_limit_mw: float | None = None,
     demand_change_pct: float = 0,
     battery_mw: float = 0,
@@ -37,7 +38,9 @@ def build_network(
     """Χτίζει το δίκτυο PyPSA της Ηπείρου πάνω σε 24 ωριαία snapshots (μία τυπική μέρα).
 
     new_res_mw: νέα ισχύς ΑΠΕ (MW), κατανεμημένη αναλογικά με πληθυσμό στους 4 κόμβους-φορτία,
-        με διαθεσιμότητα που ακολουθεί το SOLAR_PROFILE.
+        με διαθεσιμότητα που ακολουθεί το SOLAR_PROFILE (και για τα δύο είδη, βλ. new_res_type).
+    new_res_type: "Φωτοβολταϊκά" ή "Αιολικά" — μόνο για την ετικέτα/carrier, η διαθεσιμότητα
+        ακολουθεί πάντα το ίδιο SOLAR_PROFILE (δεν έχουμε ακόμα πραγματικό προφίλ ανέμου).
     import_limit_mw: αν δοθεί, αντικαθιστά το p_nom της γεννήτριας εισαγωγών/εξαγωγών
         (0 = καμία εισαγωγή επιτρεπτή, δηλ. πλήρης ενεργειακή ανεξαρτησία Ηπείρου).
     demand_change_pct: ποσοστιαία μεταβολή όλων των φορτίων (π.χ. 10 = +10%).
@@ -80,25 +83,31 @@ def build_network(
     # Οι υδρο-γεννήτριες και οι εισαγωγές θεωρούνται διαθέσιμες όλες τις ώρες (p_max_pu=1,
     # η προεπιλογή) — απλοποίηση, δεν μοντελοποιούμε εποχιακή/ημερήσια διαθεσιμότητα νερού.
 
-    # ΠΡΑΓΜΑΤΙΚΗ ήδη-εγκατεστημένη ισχύς ΑΠΕ (αιολικά+φωτοβολταϊκά) ανά κόμβο — όχι υποθετική,
-    # από αρχείο ΑΔΜΗΕ "ΑΠΕ με προσφορά σύνδεσης/σε λειτουργία" (Απρίλιος 2026). Σύνολο ~522MW.
-    # Απλοποίηση: εφαρμόζουμε το ίδιο SOLAR_PROFILE και στα αιολικά (δεν έχουμε ακόμα πραγματικό
-    # προφίλ ανέμου) — υποεκτιμά πιθανώς τη νυχτερινή παραγωγή των αιολικών πάρκων.
+    # ΠΡΑΓΜΑΤΙΚΗ ήδη-εγκατεστημένη ισχύς ΑΠΕ ανά κόμβο ΚΑΙ τύπο (Αιολικά/Φωτοβολταϊκά/Μικρά
+    # Υδροηλεκτρικά) — όχι υποθετική, από αρχείο ΑΔΜΗΕ "ΑΠΕ με προσφορά σύνδεσης/σε λειτουργία"
+    # (Απρίλιος 2026), σπασμένη ανά κατηγορία έργου. Σύνολο ~522MW.
     res_existing = pd.read_csv(f"{DATA_DIR}/res_existing_epirus.csv")
-    res_existing_names = "ΑΠΕ (υπάρχουσα) - " + res_existing["bus"].values
+    res_existing_names = (
+        "ΑΠΕ " + res_existing["category"] + " (υπάρχουσα) - " + res_existing["bus"]
+    ).values
     n.add(
         "Generator",
         res_existing_names,
         bus=res_existing["bus"].values,
-        carrier="res_existing",
+        carrier=res_existing["carrier"].values,
         p_nom=res_existing["p_nom"].values,
         marginal_cost=0,
     )
+    # Απλοποίηση: εφαρμόζουμε το ηλιακό προφίλ PVGIS και στα αιολικά (δεν έχουμε ακόμα
+    # πραγματικό προφίλ ανέμου) — υποεκτιμά πιθανώς τη νυχτερινή παραγωγή τους. Τα μικρά
+    # υδροηλεκτρικά μένουν στο προεπιλεγμένο p_max_pu=1 (πάντα διαθέσιμα), όπως τα μεγάλα.
     solar_profile_existing = pd.Series(SOLAR_PROFILE, index=n.snapshots)
+    variable_res_mask = res_existing["carrier"].isin(["solar_existing", "wind_existing"]).values
+    variable_res_names = res_existing_names[variable_res_mask]
     n.generators_t.p_max_pu = pd.concat(
         [
             n.generators_t.p_max_pu,
-            pd.DataFrame({name: solar_profile_existing for name in res_existing_names}),
+            pd.DataFrame({name: solar_profile_existing for name in variable_res_names}),
         ],
         axis=1,
     )
@@ -111,12 +120,13 @@ def build_network(
 
     if new_res_mw > 0:
         weights = loads["p_set"] / loads["p_set"].sum()
-        res_names = "ΑΠΕ (νέα) - " + loads["name"].values
+        new_carrier = "solar_new" if new_res_type == "Φωτοβολταϊκά" else "wind_new"
+        res_names = f"ΑΠΕ {new_res_type} (νέα) - " + loads["name"].values
         n.add(
             "Generator",
             res_names,
             bus=loads["bus"].values,
-            carrier="res_new",
+            carrier=new_carrier,
             p_nom=(new_res_mw * weights).values,
             marginal_cost=0,
         )
