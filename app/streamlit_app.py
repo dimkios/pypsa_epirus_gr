@@ -183,7 +183,7 @@ network = build_network(
 opt_status, opt_condition = network.optimize(solver_name="highs")
 
 st.divider()
-st.header("📚 Πώς φτιάχνεται το μοντέλο PyPSA (εκπαιδευτικό)")
+st.header("📚 Πώς φτιάχνεται το μοντέλο PyPSA")
 st.caption(
     "Παρένθεση πριν τη βελτιστοποίηση: τι είναι κάθε 'component' του PyPSA, ο πραγματικός "
     "κώδικας που το φτιάχνει σε αυτό το project, και τα πραγματικά δεδομένα που προκύπτουν."
