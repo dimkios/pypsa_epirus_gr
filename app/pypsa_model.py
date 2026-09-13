@@ -2,7 +2,7 @@ import pandas as pd
 import pypsa
 
 DATA_DIR = "data/processed"
-IMPORT_GENERATOR = "Εισαγωγές/Εξαγωγές Συστήματος"
+IMPORT_GENERATOR = "Εισαγωγές/Εξαγωγές (Σύστημα + GRITA Ιταλία)"
 NEW_RES_CAPACITY_FACTOR = 0.25  # δεν χρησιμοποιείται πια άμεσα - βλ. SOLAR_PROFILE
 
 # Τυποποιημένο 24ωρο προφίλ ζήτησης (0-1, 1.0 = ώρα αιχμής).
