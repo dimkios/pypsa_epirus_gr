@@ -23,7 +23,6 @@ fig = px.scatter_map(
     lat="lat",
     lon="lon",
     color="regional_unit",
-    symbol="type",
     hover_name="name",
     hover_data={"lat": False, "lon": False, "confidence": True, "Τύπος": True},
     zoom=7.4,
