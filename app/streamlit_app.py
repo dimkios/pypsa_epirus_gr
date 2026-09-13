@@ -9,7 +9,8 @@ st.set_page_config(page_title="PyPSA Epirus GR", layout="wide")
 
 st.title("Δίκτυο Ηλεκτρικής Ενέργειας Ηπείρου")
 st.caption(
-    "Phase 2 — πραγματική τοπολογία & γεννήτριες ΑΔΜΗΕ, πρώτο μοντέλο βελτιστοποίησης PyPSA."
+    "Phase 3 — πραγματική τοπολογία & γεννήτριες ΑΔΜΗΕ, μοντέλο βελτιστοποίησης PyPSA "
+    "με παραμετροποιήσιμο σενάριο (ΑΠΕ, εισαγωγές, ζήτηση)."
 )
 
 buses = pd.read_csv("data/processed/buses_epirus.csv")
