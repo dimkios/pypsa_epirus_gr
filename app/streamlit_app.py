@@ -157,6 +157,10 @@ network = build_network(
     battery_mw=battery_mw,
 )
 
+# Λύνουμε ΕΔΩ, πριν το εκπαιδευτικό panel — tabs όπως το StorageUnit δείχνουν αποτελέσματα
+# βελτιστοποίησης (state_of_charge, p), που δεν υπάρχουν αν δεν έχει ήδη τρέξει το optimize().
+opt_status, opt_condition = network.optimize(solver_name="highs")
+
 st.divider()
 st.header("📚 Πώς φτιάχνεται το μοντέλο PyPSA (εκπαιδευτικό)")
 st.caption(
@@ -336,7 +340,6 @@ st.caption(
     "όχι μετρημένα στοιχεία — βλ. tab 'Load' παραπάνω."
 )
 
-opt_status, opt_condition = network.optimize(solver_name="highs")
 if opt_status == "ok" and opt_condition == "optimal":
     st.success(f"Status: {opt_status} — Termination condition: {opt_condition}")
 else:
