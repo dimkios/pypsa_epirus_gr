@@ -316,10 +316,17 @@ with tab_opt:
         "μπαταρία δεν αδειάζει/γεμίζει πέρα από τη χωρητικότητά της. Το λύνει ο solver "
         "**HiGHS** (open-source)."
     )
-    st.code('n.set_snapshots(range(24))\n...\nnetwork.optimize(solver_name="highs")', language="python")
+    st.code(
+        'n.set_snapshots(range(24))\n'
+        '...\n'
+        'status, condition = network.optimize(solver_name="highs")',
+        language="python",
+    )
     st.caption(
-        "Το αποτέλεσμα φαίνεται παρακάτω. Το 'Status: Optimal' σημαίνει ότι βρέθηκε λύση που "
-        "ικανοποιεί όλους τους περιορισμούς, σε όλες τις ώρες μαζί, με το ελάχιστο δυνατό κόστος."
+        "Το `network.optimize()` επιστρέφει `(status, condition)`. `condition == 'optimal'` "
+        "σημαίνει ότι βρέθηκε λύση που ικανοποιεί όλους τους περιορισμούς, σε όλες τις ώρες "
+        "μαζί, με το ελάχιστο δυνατό κόστος. Το αποτέλεσμα εμφανίζεται παρακάτω, στην κορυφή "
+        "της ενότητας 'Βελτιστοποίηση PyPSA'."
     )
 
 st.divider()
@@ -329,7 +336,15 @@ st.caption(
     "όχι μετρημένα στοιχεία — βλ. tab 'Load' παραπάνω."
 )
 
-network.optimize(solver_name="highs")
+opt_status, opt_condition = network.optimize(solver_name="highs")
+if opt_status == "ok" and opt_condition == "optimal":
+    st.success(f"Status: {opt_status} — Termination condition: {opt_condition}")
+else:
+    st.error(
+        f"Status: {opt_status} — Termination condition: {opt_condition} "
+        "(κάτι δεν πήγε καλά — πιθανόν το σενάριο έκανε το πρόβλημα ανέφικτο, π.χ. πολύ "
+        "χαμηλό όριο εισαγωγών μαζί με πολύ υψηλή ζήτηση)"
+    )
 
 st.subheader("Παραγωγή ανά γεννήτρια, ώρα προς ώρα (MW)")
 st.area_chart(network.generators_t.p)
