@@ -80,6 +80,29 @@ def build_network(
     # Οι υδρο-γεννήτριες και οι εισαγωγές θεωρούνται διαθέσιμες όλες τις ώρες (p_max_pu=1,
     # η προεπιλογή) — απλοποίηση, δεν μοντελοποιούμε εποχιακή/ημερήσια διαθεσιμότητα νερού.
 
+    # ΠΡΑΓΜΑΤΙΚΗ ήδη-εγκατεστημένη ισχύς ΑΠΕ (αιολικά+φωτοβολταϊκά) ανά κόμβο — όχι υποθετική,
+    # από αρχείο ΑΔΜΗΕ "ΑΠΕ με προσφορά σύνδεσης/σε λειτουργία" (Απρίλιος 2026). Σύνολο ~522MW.
+    # Απλοποίηση: εφαρμόζουμε το ίδιο SOLAR_PROFILE και στα αιολικά (δεν έχουμε ακόμα πραγματικό
+    # προφίλ ανέμου) — υποεκτιμά πιθανώς τη νυχτερινή παραγωγή των αιολικών πάρκων.
+    res_existing = pd.read_csv(f"{DATA_DIR}/res_existing_epirus.csv")
+    res_existing_names = "ΑΠΕ (υπάρχουσα) - " + res_existing["bus"].values
+    n.add(
+        "Generator",
+        res_existing_names,
+        bus=res_existing["bus"].values,
+        carrier="res_existing",
+        p_nom=res_existing["p_nom"].values,
+        marginal_cost=0,
+    )
+    solar_profile_existing = pd.Series(SOLAR_PROFILE, index=n.snapshots)
+    n.generators_t.p_max_pu = pd.concat(
+        [
+            n.generators_t.p_max_pu,
+            pd.DataFrame({name: solar_profile_existing for name in res_existing_names}),
+        ],
+        axis=1,
+    )
+
     n.add("Load", loads["name"].values, bus=loads["bus"].values)
     demand_profile = pd.Series(DEMAND_PROFILE, index=n.snapshots)
     n.loads_t.p_set = pd.DataFrame(
