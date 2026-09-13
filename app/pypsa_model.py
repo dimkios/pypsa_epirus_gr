@@ -2,13 +2,32 @@ import pandas as pd
 import pypsa
 
 DATA_DIR = "data/processed"
+IMPORT_GENERATOR = "Εισαγωγές/Εξαγωγές Συστήματος"
+NEW_RES_CAPACITY_FACTOR = 0.25  # υπόθεση: μέσος συντελεστής διαθεσιμότητας ΑΠΕ σε αυτό το snapshot
 
 
-def build_network() -> pypsa.Network:
+def build_network(
+    new_res_mw: float = 0,
+    import_limit_mw: float | None = None,
+    demand_change_pct: float = 0,
+) -> pypsa.Network:
+    """Χτίζει το δίκτυο PyPSA της Ηπείρου από τα CSV, με προαιρετικές παραμέτρους σεναρίου.
+
+    new_res_mw: νέα ισχύς ΑΠΕ (MW) προς προσθήκη, κατανεμημένη αναλογικά με τον
+        πληθυσμό στους ίδιους κόμβους όπου έχουμε ήδη εκτιμήσει ζήτηση.
+    import_limit_mw: αν δοθεί, αντικαθιστά το p_nom της γεννήτριας εισαγωγών/εξαγωγών
+        (0 = καμία εισαγωγή επιτρεπτή, δηλ. πλήρης ενεργειακή ανεξαρτησία Ηπείρου).
+    demand_change_pct: ποσοστιαία μεταβολή όλων των φορτίων (π.χ. 10 = +10%).
+    """
     buses = pd.read_csv(f"{DATA_DIR}/buses_epirus.csv")
     links = pd.read_csv(f"{DATA_DIR}/links_epirus.csv")
     generators = pd.read_csv(f"{DATA_DIR}/generators_epirus.csv")
     loads = pd.read_csv(f"{DATA_DIR}/loads_epirus.csv")
+
+    if import_limit_mw is not None:
+        generators.loc[generators["name"] == IMPORT_GENERATOR, "p_nom"] = import_limit_mw
+
+    loads["p_set"] = loads["p_set"] * (1 + demand_change_pct / 100)
 
     n = pypsa.Network()
 
@@ -38,6 +57,18 @@ def build_network() -> pypsa.Network:
         bus=loads["bus"].values,
         p_set=loads["p_set"].values,
     )
+
+    if new_res_mw > 0:
+        weights = loads["p_set"] / loads["p_set"].sum()
+        n.add(
+            "Generator",
+            "ΑΠΕ (νέα) - " + loads["name"].values,
+            bus=loads["bus"].values,
+            carrier="res_new",
+            p_nom=(new_res_mw * weights).values,
+            p_max_pu=NEW_RES_CAPACITY_FACTOR,
+            marginal_cost=0,
+        )
 
     return n
 

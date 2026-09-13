@@ -66,9 +66,52 @@ st.caption(
 )
 
 st.divider()
+st.header("Σενάριο")
+st.caption(
+    "Phase 3 — πειραματίσου με παραμέτρους και δες πώς αλλάζει το ισοζύγιο. "
+    "Οι προεπιλογές αναπαράγουν ακριβώς το αποτέλεσμα του Phase 2."
+)
 
-network = build_network()
+col_res, col_import, col_demand = st.columns(3)
+with col_res:
+    new_res_mw = st.slider(
+        "Νέα ισχύς ΑΠΕ (MW)",
+        min_value=0,
+        max_value=500,
+        value=0,
+        step=10,
+        help=(
+            "Κατανέμεται αναλογικά με τον πληθυσμό στους 4 κόμβους-φορτία. "
+            "Υποθέτουμε συντελεστή διαθεσιμότητας 25% σε αυτό το snapshot "
+            "(δηλ. στην πράξη διαθέσιμο = 25% της ονομαστικής ισχύος)."
+        ),
+    )
+with col_import:
+    import_limit_mw = st.slider(
+        "Μέγιστες επιτρεπτές εισαγωγές (MW)",
+        min_value=0,
+        max_value=1000,
+        value=1000,
+        step=50,
+        help="0 = πλήρης ενεργειακή ανεξαρτησία Ηπείρου από το υπόλοιπο σύστημα.",
+    )
+with col_demand:
+    demand_change_pct = st.slider(
+        "Μεταβολή ζήτησης (%)",
+        min_value=-20,
+        max_value=100,
+        value=0,
+        step=5,
+        help="Εφαρμόζεται ομοιόμορφα σε όλα τα εκτιμώμενα φορτία.",
+    )
 
+network = build_network(
+    new_res_mw=new_res_mw,
+    import_limit_mw=import_limit_mw,
+    demand_change_pct=demand_change_pct,
+)
+
+st.divider()
 st.header("📚 Πώς φτιάχνεται το μοντέλο PyPSA (εκπαιδευτικό)")
 st.caption(
     "Παρένθεση πριν τη βελτιστοποίηση: τι είναι κάθε 'component' του PyPSA, ο πραγματικός "
@@ -111,7 +154,9 @@ with tab_gen:
     st.caption(
         "Στο δικό μας δίκτυο: 5 πραγματικά υδροηλεκτρικά (χαμηλό marginal_cost=5) + 1 τεχνητή "
         "'γεννήτρια' εισαγωγών (marginal_cost=60) που αναπαριστά το υπόλοιπο ελληνικό σύστημα — "
-        "χρησιμοποιείται μόνο αν τα υδροηλεκτρικά δεν επαρκούν."
+        "χρησιμοποιείται μόνο αν τα υδροηλεκτρικά δεν επαρκούν — και, αν το ρύθμισες παραπάνω "
+        "στο 'Σενάριο', επιπλέον γεννήτριες 'ΑΠΕ (νέα)' με marginal_cost=0 (δηλ. προτιμώνται "
+        "πρώτες από τον solver, πριν καν τα υδροηλεκτρικά)."
     )
     st.dataframe(network.generators[["bus", "carrier", "p_nom", "marginal_cost"]], use_container_width=True)
 
@@ -206,8 +251,11 @@ with st.expander("Ροές στις γραμμές (Links)"):
     flows = network.links_t.p0.iloc[0].rename("Ροή (MW, θετικό = bus0→bus1)")
     st.dataframe(flows, use_container_width=True)
 
-with st.expander("Δεδομένα εισόδου (γεννήτριες / φορτία)"):
+with st.expander("Δεδομένα εισόδου (γεννήτριες / φορτία) — μετά τις ρυθμίσεις σεναρίου"):
     st.write("Γεννήτριες")
-    st.dataframe(pd.read_csv("data/processed/generators_epirus.csv"), use_container_width=True)
+    st.dataframe(
+        network.generators[["bus", "carrier", "p_nom", "p_max_pu", "marginal_cost"]],
+        use_container_width=True,
+    )
     st.write("Φορτία")
-    st.dataframe(pd.read_csv("data/processed/loads_epirus.csv"), use_container_width=True)
+    st.dataframe(network.loads[["bus", "p_set"]], use_container_width=True)
