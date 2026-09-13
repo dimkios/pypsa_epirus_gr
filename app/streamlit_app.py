@@ -7,7 +7,10 @@ from pypsa_model import IMPORT_GENERATOR, build_network
 
 st.set_page_config(page_title="PyPSA Epirus GR", layout="wide")
 
-st.title("Δίκτυο Ηλεκτρικής Ενέργειας Ηπείρου")
+_logo_col1, _logo_col2, _logo_col3 = st.columns([1, 2, 1])
+with _logo_col2:
+    st.image("data/logo.png", use_container_width=True)
+
 st.caption(
     "Phase 4 — πραγματική τοπολογία, γεννήτριες ΚΑΙ ήδη-εγκατεστημένη ισχύς ΑΠΕ (~522MW) από "
     "ΑΔΜΗΕ, μοντέλο PyPSA με 24ωρο σενάριο (ΑΠΕ, εισαγωγές, ζήτηση, μπαταρία)."
@@ -47,6 +50,7 @@ fig = px.scatter_map(
     center={"lat": 39.55, "lon": 20.85},
     height=650,
 )
+fig.update_traces(marker={"size": 18})
 
 for _, link in links.iterrows():
     b0, b1 = bus_coords.loc[link["bus0"]], bus_coords.loc[link["bus1"]]
