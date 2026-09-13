@@ -18,13 +18,13 @@ _today_str = f"{_today.day} {_GREEK_MONTHS[_today.month - 1]} {_today.year}"
 
 _header_col1, _header_col2 = st.columns([1, 3])
 with _header_col1:
-    st.image("data/logo.png", width=200)
+    st.image("data/logo.png", width=300)
 with _header_col2:
     st.markdown(
         f"<div style='text-align: right; padding-top: 0.5rem;'>{_today_str}</div>",
         unsafe_allow_html=True,
     )
-st.divider()
+st.markdown("<hr style='margin: 0; padding: 0;'>", unsafe_allow_html=True)
 
 st.caption(
     "Phase 4 — πραγματική τοπολογία, γεννήτριες ΚΑΙ ήδη-εγκατεστημένη ισχύς ΑΠΕ (~522MW) από "
