@@ -24,7 +24,9 @@ with _header_col2:
         f"<div style='text-align: right; padding-top: 0.5rem;'>{_today_str}</div>",
         unsafe_allow_html=True,
     )
-st.markdown("<hr style='margin: 0; padding: 0;'>", unsafe_allow_html=True)
+st.markdown(
+    "<hr style='margin-top: -1rem; margin-bottom: 0; padding: 0;'>", unsafe_allow_html=True
+)
 
 st.caption(
     "Phase 4 — πραγματική τοπολογία, γεννήτριες ΚΑΙ ήδη-εγκατεστημένη ισχύς ΑΠΕ (~522MW) από "
