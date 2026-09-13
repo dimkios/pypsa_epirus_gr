@@ -18,7 +18,7 @@ _today_str = f"{_today.day} {_GREEK_MONTHS[_today.month - 1]} {_today.year}"
 
 _header_col1, _header_col2 = st.columns([1, 3])
 with _header_col1:
-    st.image("data/logo.png", width=150)
+    st.image("data/logo.png", width=200)
 with _header_col2:
     st.markdown(
         f"<div style='text-align: right; padding-top: 0.5rem;'>{_today_str}</div>",
