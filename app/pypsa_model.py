@@ -3,21 +3,42 @@ import pypsa
 
 DATA_DIR = "data/processed"
 IMPORT_GENERATOR = "Εισαγωγές/Εξαγωγές Συστήματος"
-NEW_RES_CAPACITY_FACTOR = 0.25  # υπόθεση: μέσος συντελεστής διαθεσιμότητας ΑΠΕ σε αυτό το snapshot
+NEW_RES_CAPACITY_FACTOR = 0.25  # δεν χρησιμοποιείται πια άμεσα - βλ. SOLAR_PROFILE
+
+# Τυποποιημένο 24ωρο προφίλ ζήτησης (0-1, 1.0 = ώρα αιχμής).
+# Τυπική καμπύλη οικιακής/εμπορικής κατανάλωσης: χαμηλό τη νύχτα, δύο αιχμές (πρωί/βράδυ).
+# ΔΕΝ είναι μετρημένα στοιχεία Ηπείρου - γενική παραδοχή σχήματος καμπύλης.
+DEMAND_PROFILE = [
+    0.55, 0.50, 0.47, 0.45, 0.45, 0.48, 0.55, 0.65, 0.75, 0.82, 0.85, 0.87,
+    0.83, 0.80, 0.78, 0.78, 0.80, 0.85, 0.95, 1.00, 0.95, 0.85, 0.72, 0.62,
+]
+
+# Τυποποιημένο 24ωρο προφίλ διαθεσιμότητας ηλιακού ΑΠΕ (0-1), καμπάνα με αιχμή το μεσημέρι.
+# Υπόθεση σχήματος, όχι πραγματικά δεδομένα ακτινοβολίας για την Ήπειρο (βλ. Phase 4 TODO: PVGIS).
+SOLAR_PROFILE = [
+    0, 0, 0, 0, 0, 0, 0.05, 0.15, 0.35, 0.55, 0.75, 0.90,
+    0.98, 1.00, 0.95, 0.85, 0.65, 0.40, 0.15, 0.03, 0, 0, 0, 0,
+]
+
+BATTERY_BUS = "Άραχθος ΚΥΤ"
 
 
 def build_network(
     new_res_mw: float = 0,
     import_limit_mw: float | None = None,
     demand_change_pct: float = 0,
+    battery_mw: float = 0,
+    battery_hours: float = 4,
 ) -> pypsa.Network:
-    """Χτίζει το δίκτυο PyPSA της Ηπείρου από τα CSV, με προαιρετικές παραμέτρους σεναρίου.
+    """Χτίζει το δίκτυο PyPSA της Ηπείρου πάνω σε 24 ωριαία snapshots (μία τυπική μέρα).
 
-    new_res_mw: νέα ισχύς ΑΠΕ (MW) προς προσθήκη, κατανεμημένη αναλογικά με τον
-        πληθυσμό στους ίδιους κόμβους όπου έχουμε ήδη εκτιμήσει ζήτηση.
+    new_res_mw: νέα ισχύς ΑΠΕ (MW), κατανεμημένη αναλογικά με πληθυσμό στους 4 κόμβους-φορτία,
+        με διαθεσιμότητα που ακολουθεί το SOLAR_PROFILE.
     import_limit_mw: αν δοθεί, αντικαθιστά το p_nom της γεννήτριας εισαγωγών/εξαγωγών
         (0 = καμία εισαγωγή επιτρεπτή, δηλ. πλήρης ενεργειακή ανεξαρτησία Ηπείρου).
     demand_change_pct: ποσοστιαία μεταβολή όλων των φορτίων (π.χ. 10 = +10%).
+    battery_mw: ισχύς μπαταρίας (MW) στον κόμβο ΚΥΤ Άραχθος. 0 = καμία μπαταρία.
+    battery_hours: ώρες αποθήκευσης στη μέγιστη ισχύ (π.χ. 4 = χωρητικότητα 4×battery_mw MWh).
     """
     buses = pd.read_csv(f"{DATA_DIR}/buses_epirus.csv")
     links = pd.read_csv(f"{DATA_DIR}/links_epirus.csv")
@@ -30,6 +51,7 @@ def build_network(
     loads["p_set"] = loads["p_set"] * (1 + demand_change_pct / 100)
 
     n = pypsa.Network()
+    n.set_snapshots(range(24))
 
     n.add("Bus", buses["name"].values, x=buses["lon"].values, y=buses["lat"].values)
 
@@ -51,23 +73,42 @@ def build_network(
         marginal_cost=generators["marginal_cost"].values,
     )
 
-    n.add(
-        "Load",
-        loads["name"].values,
-        bus=loads["bus"].values,
-        p_set=loads["p_set"].values,
+    # Οι υδρο-γεννήτριες και οι εισαγωγές θεωρούνται διαθέσιμες όλες τις ώρες (p_max_pu=1,
+    # η προεπιλογή) — απλοποίηση, δεν μοντελοποιούμε εποχιακή/ημερήσια διαθεσιμότητα νερού.
+
+    n.add("Load", loads["name"].values, bus=loads["bus"].values)
+    demand_profile = pd.Series(DEMAND_PROFILE, index=n.snapshots)
+    n.loads_t.p_set = pd.DataFrame(
+        {name: peak * demand_profile for name, peak in zip(loads["name"], loads["p_set"])}
     )
 
     if new_res_mw > 0:
         weights = loads["p_set"] / loads["p_set"].sum()
+        res_names = "ΑΠΕ (νέα) - " + loads["name"].values
         n.add(
             "Generator",
-            "ΑΠΕ (νέα) - " + loads["name"].values,
+            res_names,
             bus=loads["bus"].values,
             carrier="res_new",
             p_nom=(new_res_mw * weights).values,
-            p_max_pu=NEW_RES_CAPACITY_FACTOR,
             marginal_cost=0,
+        )
+        solar_profile = pd.Series(SOLAR_PROFILE, index=n.snapshots)
+        n.generators_t.p_max_pu = pd.concat(
+            [n.generators_t.p_max_pu, pd.DataFrame({name: solar_profile for name in res_names})],
+            axis=1,
+        )
+
+    if battery_mw > 0:
+        n.add(
+            "StorageUnit",
+            "Μπαταρία Ηπείρου",
+            bus=BATTERY_BUS,
+            p_nom=battery_mw,
+            max_hours=battery_hours,
+            cyclic_state_of_charge=True,  # η στάθμη στο τέλος της μέρας = στάθμη στην αρχή
+            efficiency_store=0.95,
+            efficiency_dispatch=0.95,
         )
 
     return n
@@ -77,11 +118,8 @@ if __name__ == "__main__":
     network = build_network()
     network.optimize(solver_name="highs")
 
-    print("\nΠαραγωγή ανά γεννήτρια (MW):")
-    print(network.generators_t.p.iloc[0])
+    print("\nΠαραγωγή ανά γεννήτρια (MW) ανά ώρα:")
+    print(network.generators_t.p)
 
-    print("\nΡοές γραμμών (MW, θετικό = bus0->bus1):")
-    print(network.links_t.p0.iloc[0])
-
-    print("\nΣυνολική ζήτηση:", network.loads["p_set"].sum(), "MW")
-    print("Συνολική παραγωγή:", network.generators_t.p.iloc[0].sum(), "MW")
+    print("\nΣυνολική ημερήσια ζήτηση:", network.loads_t.p_set.sum().sum(), "MWh")
+    print("Συνολική ημερήσια παραγωγή:", network.generators_t.p.sum().sum(), "MWh")

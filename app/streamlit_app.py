@@ -69,11 +69,11 @@ st.caption(
 st.divider()
 st.header("Σενάριο")
 st.caption(
-    "Phase 3 — πειραματίσου με παραμέτρους και δες πώς αλλάζει το ισοζύγιο. "
-    "Οι προεπιλογές αναπαράγουν ακριβώς το αποτέλεσμα του Phase 2."
+    "Phase 4 — μία τυπική ημέρα (24 ωριαία snapshots) αντί για μία στιγμή. "
+    "Πειραματίσου με παραμέτρους και δες πώς αλλάζει το ημερήσιο ισοζύγιο."
 )
 
-col_res, col_import, col_demand = st.columns(3)
+col_res, col_import, col_demand, col_batt = st.columns(4)
 with col_res:
     new_res_mw = st.slider(
         "Νέα ισχύς ΑΠΕ (MW)",
@@ -83,8 +83,8 @@ with col_res:
         step=10,
         help=(
             "Κατανέμεται αναλογικά με τον πληθυσμό στους 4 κόμβους-φορτία. "
-            "Υποθέτουμε συντελεστή διαθεσιμότητας 25% σε αυτό το snapshot "
-            "(δηλ. στην πράξη διαθέσιμο = 25% της ονομαστικής ισχύος)."
+            "Ακολουθεί τυποποιημένο ηλιακό προφίλ (μηδέν τη νύχτα, αιχμή το μεσημέρι) — "
+            "όχι πραγματικά δεδομένα ακτινοβολίας ακόμα."
         ),
     )
 with col_import:
@@ -103,13 +103,27 @@ with col_demand:
         max_value=100,
         value=0,
         step=5,
-        help="Εφαρμόζεται ομοιόμορφα σε όλα τα εκτιμώμενα φορτία.",
+        help="Εφαρμόζεται ομοιόμορφα σε όλα τα εκτιμώμενα φορτία, σε κάθε ώρα.",
+    )
+with col_batt:
+    battery_mw = st.slider(
+        "Ισχύς μπαταρίας (MW)",
+        min_value=0,
+        max_value=200,
+        value=0,
+        step=10,
+        help=(
+            "Τοποθετείται στο ΚΥΤ Άραχθος. Χωρητικότητα = 4 ώρες × ισχύς. "
+            "Με άφθονα ευέλικτα υδροηλεκτρικά, η μπαταρία συχνά δεν χρειάζεται — "
+            "δοκίμασε να προσθέσεις πολλή ΑΠΕ ΚΑΙ να μειώσεις τη ζήτηση για να τη δεις να δουλεύει."
+        ),
     )
 
 network = build_network(
     new_res_mw=new_res_mw,
     import_limit_mw=import_limit_mw,
     demand_change_pct=demand_change_pct,
+    battery_mw=battery_mw,
 )
 
 st.divider()
@@ -119,8 +133,8 @@ st.caption(
     "κώδικας που το φτιάχνει σε αυτό το project, και τα πραγματικά δεδομένα που προκύπτουν."
 )
 
-tab_bus, tab_gen, tab_load, tab_link, tab_opt = st.tabs(
-    ["Bus", "Generator", "Load", "Link", "Snapshot & optimize()"]
+tab_bus, tab_gen, tab_load, tab_link, tab_storage, tab_opt = st.tabs(
+    ["Bus", "Generator", "Load", "Link", "StorageUnit", "Snapshot & optimize()"]
 )
 
 with tab_bus:
@@ -164,21 +178,26 @@ with tab_gen:
 with tab_load:
     st.markdown(
         "**Load** = κατανάλωση συνδεδεμένη σε ένα bus. Το `p_set` είναι η ζήτηση που *πρέπει* "
-        "να καλυφθεί — ο solver δεν έχει επιλογή εδώ, είναι περιορισμός (constraint), όχι απόφαση."
+        "να καλυφθεί — ο solver δεν έχει επιλογή εδώ, είναι περιορισμός (constraint), όχι απόφαση. "
+        "Από το Phase 4 και μετά, έχουμε **24 snapshots** (μία τυπική ημέρα), οπότε το `p_set` "
+        "δεν είναι πια ένας αριθμός αλλά μια *χρονοσειρά* — γι' αυτό ζει στο `n.loads_t.p_set` "
+        "(η κατάληξη `_t` δηλώνει 'time-varying' σε όλο το PyPSA)."
     )
     st.code(
-        'n.add(\n'
-        '    "Load", loads["name"].values,\n'
-        '    bus=loads["bus"].values,\n'
-        '    p_set=loads["p_set"].values,   # ζήτηση σε MW\n'
+        'n.add("Load", loads["name"].values, bus=loads["bus"].values)\n\n'
+        '# το p_set γίνεται χρονοσειρά: αιχμή (peak) × τυποποιημένο 24ωρο προφίλ ζήτησης\n'
+        'demand_profile = pd.Series(DEMAND_PROFILE, index=n.snapshots)\n'
+        'n.loads_t.p_set = pd.DataFrame(\n'
+        '    {name: peak * demand_profile for name, peak in zip(loads["name"], loads["p_set"])}\n'
         ')',
         language="python",
     )
     st.caption(
-        "Οι 4 τιμές `p_set` εδώ είναι **εκτιμήσεις** (πληθυσμιακή αναλογία), όχι πραγματικές "
-        "μετρήσεις κατανάλωσης — βλ. [[Κενό - Ζήτηση ανά περιφέρεια]] στο Obsidian."
+        "Οι τιμές αιχμής (`peak`) είναι **εκτιμήσεις** (πληθυσμιακή αναλογία), όχι πραγματικές "
+        "μετρήσεις κατανάλωσης — βλ. [[Κενό - Ζήτηση ανά περιφέρεια]] στο Obsidian. Το *σχήμα* "
+        "της καμπύλης (DEMAND_PROFILE) είναι επίσης παραδοχή, όχι μετρημένο προφίλ Ηπείρου."
     )
-    st.dataframe(network.loads[["bus", "p_set"]], use_container_width=True)
+    st.line_chart(network.loads_t.p_set)
 
 with tab_link:
     st.markdown(
@@ -204,59 +223,101 @@ with tab_link:
     )
     st.dataframe(network.links[["bus0", "bus1", "p_nom", "p_min_pu"]], use_container_width=True)
 
+with tab_storage:
+    if battery_mw > 0:
+        st.markdown(
+            "**StorageUnit** = μπαταρία (ή γενικά αποθήκευση): μπορεί είτε να *καταναλώνει* "
+            "ισχύ (φορτίζει, `p<0`) είτε να *παράγει* (αποφορτίζει, `p>0`). Το `max_hours` "
+            "καθορίζει τη χωρητικότητα σε MWh = `p_nom` × `max_hours`. Το "
+            "`cyclic_state_of_charge=True` αναγκάζει η στάθμη στο τέλος της ημέρας να ισούται "
+            "με αυτή στην αρχή — αλλιώς ο solver θα την άδειαζε τελείως την πρώτη μέρα (δεν θα "
+            "υπήρχε λόγος να κρατήσει απόθεμα για 'αύριο')."
+        )
+        st.code(
+            'n.add(\n'
+            '    "StorageUnit", "Μπαταρία Ηπείρου",\n'
+            '    bus="Άραχθος ΚΥΤ",\n'
+            '    p_nom=battery_mw,        # μέγιστη ισχύς φόρτισης/αποφόρτισης (MW)\n'
+            '    max_hours=4,             # χωρητικότητα = 4 × p_nom MWh\n'
+            '    cyclic_state_of_charge=True,\n'
+            '    efficiency_store=0.95, efficiency_dispatch=0.95,   # 5% απώλειες ανά κατεύθυνση\n'
+            ')',
+            language="python",
+        )
+        st.caption("Στάθμη φόρτισης (state of charge) στη διάρκεια της ημέρας:")
+        st.line_chart(network.storage_units_t.state_of_charge)
+        st.caption("Ισχύς μπαταρίας (θετικό = αποφόρτιση/τροφοδοτεί το δίκτυο, αρνητικό = φόρτιση):")
+        st.line_chart(network.storage_units_t.p)
+    else:
+        st.info(
+            "Δεν έχεις προσθέσει μπαταρία (slider 'Ισχύς μπαταρίας' = 0 παραπάνω). "
+            "Ανέβασε το slider για να δεις εδώ πώς φορτίζει/αποφορτίζει μέσα στην ημέρα."
+        )
+
 with tab_opt:
     st.markdown(
-        "**Snapshot** = μία χρονική στιγμή για την οποία λύνουμε το πρόβλημα (εδώ έχουμε μόνο "
-        "μία, `\"now\"` — καμία χρονοσειρά ακόμα, αυτό έρχεται σε επόμενη φάση). "
-        "**`network.optimize()`** στήνει ένα γραμμικό πρόβλημα βελτιστοποίησης: "
-        "*ελαχιστοποίησε* το συνολικό κόστος παραγωγής (Σ `marginal_cost` × `p`), "
-        "με περιορισμούς: (α) κάθε Load καλύπτεται ακριβώς, (β) καμία γεννήτρια δεν ξεπερνά "
-        "το `p_nom` της, (γ) καμία γραμμή/Link δεν ξεπερνά τη χωρητικότητά της. Το λύνει ο "
-        "solver **HiGHS** (open-source)."
+        "**Snapshot** = μία χρονική στιγμή για την οποία λύνουμε το πρόβλημα. Από το Phase 4 "
+        "έχουμε **24 snapshots** (`n.set_snapshots(range(24))`) — μία τυπική ημέρα, ώρα-ώρα, "
+        "αντί για μία μόνο στιγμή. Αυτό είναι που δίνει νόημα στην αποθήκευση: μπορεί να "
+        "φορτίσει σε μια ώρα και να αποφορτίσει σε άλλη. "
+        "**`network.optimize()`** στήνει ένα γραμμικό πρόβλημα βελτιστοποίησης *για όλες τις "
+        "ώρες μαζί*: ελαχιστοποίησε το συνολικό κόστος παραγωγής (Σ `marginal_cost` × `p`, "
+        "αθροισμένο σε όλες τις ώρες), με περιορισμούς: (α) κάθε Load καλύπτεται ακριβώς σε "
+        "κάθε ώρα, (β) καμία γεννήτρια/γραμμή δεν ξεπερνά το όριό της σε καμία ώρα, (γ) η "
+        "μπαταρία δεν αδειάζει/γεμίζει πέρα από τη χωρητικότητά της. Το λύνει ο solver "
+        "**HiGHS** (open-source)."
     )
-    st.code('network.optimize(solver_name="highs")', language="python")
+    st.code('n.set_snapshots(range(24))\n...\nnetwork.optimize(solver_name="highs")', language="python")
     st.caption(
         "Το αποτέλεσμα φαίνεται παρακάτω. Το 'Status: Optimal' σημαίνει ότι βρέθηκε λύση που "
-        "ικανοποιεί όλους τους περιορισμούς με το ελάχιστο δυνατό κόστος."
+        "ικανοποιεί όλους τους περιορισμούς, σε όλες τις ώρες μαζί, με το ελάχιστο δυνατό κόστος."
     )
 
 st.divider()
-st.header("Βελτιστοποίηση PyPSA (μία στιγμή - single snapshot)")
+st.header("Βελτιστοποίηση PyPSA — μία τυπική ημέρα (24 ωριαία snapshots)")
 st.caption(
-    "Η ζήτηση ανά Περιφερειακή Ενότητα είναι **εκτίμηση** (αναλογία πληθυσμού 2021 επί εθνικής "
-    "αιχμής), όχι μετρημένα στοιχεία — βλ. πίνακα φορτίων παρακάτω."
+    "Η ζήτηση ανά Περιφερειακή Ενότητα και το σχήμα της ημερήσιας καμπύλης είναι **εκτιμήσεις**, "
+    "όχι μετρημένα στοιχεία — βλ. tab 'Load' παραπάνω."
 )
 
 network.optimize(solver_name="highs")
 
+st.subheader("Παραγωγή ανά γεννήτρια, ώρα προς ώρα (MW)")
+st.area_chart(network.generators_t.p)
+
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Παραγωγή ανά γεννήτρια")
-    dispatch = network.generators_t.p.iloc[0].rename("Παραγωγή (MW)")
-    st.bar_chart(dispatch)
+    st.subheader("Ημερήσιο ισοζύγιο (MWh)")
+    total_demand = network.loads_t.p_set.sum().sum()
+    total_gen = network.generators_t.p.sum().sum()
+    import_energy = network.generators_t.p.get(
+        "Εισαγωγές/Εξαγωγές Συστήματος", pd.Series(0, index=network.snapshots)
+    ).sum()
+    st.metric("Συνολική ημερήσια ζήτηση", f"{total_demand:.0f} MWh")
+    st.metric("Συνολική ημερήσια παραγωγή", f"{total_gen:.0f} MWh")
+    st.metric(
+        "Εισαγωγές συστήματος (ημερήσιο σύνολο)",
+        f"{import_energy:.0f} MWh",
+        help="Άθροισμα ισχύος εισαγωγών σε όλες τις ώρες, μέσω ΚΥΤ Άραχθος",
+    )
 
 with col2:
-    st.subheader("Ισοζύγιο")
-    total_demand = network.loads["p_set"].sum()
-    total_gen = network.generators_t.p.iloc[0].sum()
-    st.metric("Συνολική ζήτηση", f"{total_demand:.1f} MW")
-    st.metric("Συνολική παραγωγή", f"{total_gen:.1f} MW")
-    st.metric(
-        "Εισαγωγές/Εξαγωγές συστήματος",
-        f"{network.generators_t.p.iloc[0].get('Εισαγωγές/Εξαγωγές Συστήματος', 0):.1f} MW",
-        help="Θετικό = εισαγωγή ισχύος από το υπόλοιπο σύστημα μέσω ΚΥΤ Άραχθος",
-    )
+    if battery_mw > 0:
+        st.subheader("Στάθμη μπαταρίας (MWh)")
+        st.line_chart(network.storage_units_t.state_of_charge)
+    else:
+        st.subheader("Μέγιστη ωριαία ζήτηση ανά κόμβο")
+        st.bar_chart(network.loads_t.p_set.max())
 
-with st.expander("Ροές στις γραμμές (Links)"):
-    flows = network.links_t.p0.iloc[0].rename("Ροή (MW, θετικό = bus0→bus1)")
-    st.dataframe(flows, use_container_width=True)
+with st.expander("Ροές στις γραμμές (Links), ώρα προς ώρα"):
+    st.dataframe(network.links_t.p0, use_container_width=True)
 
 with st.expander("Δεδομένα εισόδου (γεννήτριες / φορτία) — μετά τις ρυθμίσεις σεναρίου"):
-    st.write("Γεννήτριες")
+    st.write("Γεννήτριες (στατικά χαρακτηριστικά)")
     st.dataframe(
-        network.generators[["bus", "carrier", "p_nom", "p_max_pu", "marginal_cost"]],
+        network.generators[["bus", "carrier", "p_nom", "marginal_cost"]],
         use_container_width=True,
     )
-    st.write("Φορτία")
-    st.dataframe(network.loads[["bus", "p_set"]], use_container_width=True)
+    st.write("Φορτία, ώρα προς ώρα (MW)")
+    st.dataframe(network.loads_t.p_set, use_container_width=True)
