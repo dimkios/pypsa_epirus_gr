@@ -352,6 +352,56 @@ else:
 st.subheader("Παραγωγή ανά γεννήτρια, ώρα προς ώρα (MW)")
 st.area_chart(network.generators_t.p)
 
+st.subheader("Ζήτηση: ποιος τύπος πηγής την κάλυψε, ώρα προς ώρα")
+st.caption(
+    "Συνολική σύνθεση παραγωγής **όλου του συστήματος** ανά τύπο πηγής — όχι ανά κόμβο. Σε "
+    "ένα δίκτυο με Links η ισχύς 'αναμειγνύεται' στις γραμμές, οπότε δεν μπορούμε να πούμε με "
+    "μαθηματική ακρίβεια ποιο συγκεκριμένο MW σε ποιο φορτίο ήρθε από ποια ακριβώς γεννήτρια — "
+    "αυτό το γράφημα δείχνει τη ρεαλιστική εικόνα: τη συνολική σύνθεση παραγωγής τη στιγμή που "
+    "καλύπτεται η συνολική ζήτηση. Η διακεκομμένη μαύρη γραμμή είναι η συνολική ζήτηση — όπου η "
+    "στοιβαγμένη περιοχή φτάνει τη γραμμή, η ζήτηση καλύφθηκε πλήρως. **Αν έχεις προσθέσει "
+    "μπαταρία**, οι δύο δεν ταυτίζονται πάντα: όταν η μπαταρία φορτίζει, η παραγωγή φαίνεται "
+    "*πάνω* από τη ζήτηση (το πλεόνασμα αποθηκεύεται, δεν καταναλώνεται)· όταν αποφορτίζει, η "
+    "παραγωγή γεννητριών φαίνεται *κάτω* από τη ζήτηση (τη διαφορά την καλύπτει η μπαταρία, "
+    "που δεν είναι Generator — δες το ξεχωριστό γράφημα στο tab 'StorageUnit')."
+)
+CARRIER_GROUPS = {
+    "hydro": "Υδροηλεκτρικά (μεγάλα)",
+    "small_hydro_existing": "Μικρά Υδροηλεκτρικά",
+    "wind_existing": "Αιολικά",
+    "wind_new": "Αιολικά",
+    "solar_existing": "Φωτοβολταϊκά",
+    "solar_new": "Φωτοβολταϊκά",
+    "grid_import": "Εισαγωγές (Σύστημα+GRITA)",
+}
+gen_group = network.generators["carrier"].map(CARRIER_GROUPS)
+gen_by_group = network.generators_t.p.T.groupby(gen_group).sum().T
+
+fig_mix = go.Figure()
+for col in gen_by_group.columns:
+    fig_mix.add_trace(
+        go.Scatter(
+            x=list(network.snapshots),
+            y=gen_by_group[col],
+            name=col,
+            stackgroup="gen",
+            mode="lines",
+        )
+    )
+fig_mix.add_trace(
+    go.Scatter(
+        x=list(network.snapshots),
+        y=network.loads_t.p_set.sum(axis=1),
+        name="Συνολική ζήτηση",
+        mode="lines",
+        line={"color": "black", "width": 2, "dash": "dash"},
+    )
+)
+fig_mix.update_layout(
+    xaxis_title="Ώρα", yaxis_title="MW", height=420, margin={"t": 20, "b": 0}
+)
+st.plotly_chart(fig_mix, use_container_width=True)
+
 col1, col2 = st.columns(2)
 
 with col1:
@@ -406,4 +456,9 @@ with st.expander("Δεδομένα εισόδου (γεννήτριες / φορ
         use_container_width=True,
     )
     st.write("Φορτία, ώρα προς ώρα (MW) — η ζήτηση που *πρέπει* να καλυφθεί σε κάθε κόμβο/ώρα")
+    st.caption(
+        "Για το *ποιος τύπος πηγής* κάλυψε αυτή τη ζήτηση (σε επίπεδο συστήματος, όχι ανά "
+        "κόμβο — δες γιατί παραπάνω), βλ. το γράφημα 'Ζήτηση: ποιος τύπος πηγής την κάλυψε' "
+        "στην κορυφή της σελίδας."
+    )
     st.dataframe(network.loads_t.p_set, use_container_width=True)
